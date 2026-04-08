@@ -8,6 +8,7 @@ from datetime import datetime
 import calendar
 from typing import Dict, Optional
 from dotenv import load_dotenv
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -17,15 +18,19 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import aiosqlite
 
-load_dotenv()
+# ========== ЗАГРУЗКА ТОКЕНА ==========
+BASE_DIR = Path(__file__).parent
+ENV_PATH = BASE_DIR / ".env"
+load_dotenv(dotenv_path=ENV_PATH)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не найден в .env файле")
+    raise ValueError(f"BOT_TOKEN не найден в {ENV_PATH}")
 
-DB_FILE = "budget_bot.db"
-HUMOR_FILE = "humor_phrases.json"
+DB_FILE = str(BASE_DIR / "budget_bot.db")
+HUMOR_FILE = str(BASE_DIR / "humor_phrases.json")
 
-# ================== ЗАГРУЗКА ШУТОК ==================
+# ========== ШУТКИ (если нет файла, используются встроенные) ==========
 def load_humor_phrases() -> Dict:
     if os.path.exists(HUMOR_FILE):
         try:
@@ -51,7 +56,7 @@ def load_humor_phrases() -> Dict:
 
 HUMOR_PHRASES = load_humor_phrases()
 
-# ================== СТИЛИ СООБЩЕНИЙ ==================
+# ========== СТИЛИ СООБЩЕНИЙ ==========
 MESSAGES = {
     "welcome": {
         "official": "Добро пожаловать в Персональный Финансовый Помощник!",
@@ -235,7 +240,7 @@ MESSAGES = {
     }
 }
 
-# ================== УТИЛИТЫ ==================
+# ========== УТИЛИТЫ ==========
 def get_random_humor(key: str, **kwargs) -> str:
     phrases = HUMOR_PHRASES.get(key, [])
     if not phrases:
@@ -320,7 +325,7 @@ def calculate_daily_limit(remaining: int, days: int) -> int:
         return 0
     return math.ceil(remaining / days)
 
-# ================== БАЗА ДАННЫХ ==================
+# ========== БАЗА ДАННЫХ ==========
 async def init_db():
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute('''
@@ -362,7 +367,7 @@ async def update_user_style(user_id: int, style: str):
         await db.execute('UPDATE users SET speech_style = ? WHERE user_id = ?', (style, user_id))
         await db.commit()
 
-# ================== FSM ==================
+# ========== FSM ==========
 class BudgetSetup(StatesGroup):
     income = State()
     fund = State()
@@ -380,7 +385,7 @@ class AddExpense(StatesGroup):
 class DailyCheck(StatesGroup):
     waiting_for_choice = State()
 
-# ================== КЛАВИАТУРЫ ==================
+# ========== КЛАВИАТУРЫ ==========
 def main_keyboard(style: str) -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text="🌅 Ежедневная проверка"), KeyboardButton(text="📝 Добавить расход")],
@@ -405,7 +410,7 @@ def style_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=get_message("conversational", "style_humorous"), callback_data="style_humorous")]
     ])
 
-# ================== ХЕЛПЕР ДЛЯ НОВЫХ ДАННЫХ ==================
+# ========== ХЕЛПЕР ДЛЯ НОВЫХ ДАННЫХ ==========
 def new_user_data(income: int, fund: int, fixed: int, temporary: int, unexpected: int, estimated: int, daily: int) -> Dict:
     today = datetime.now()
     days_in_month = calendar.monthrange(today.year, today.month)[1]
@@ -433,7 +438,7 @@ def new_user_data(income: int, fund: int, fixed: int, temporary: int, unexpected
         "monthly_summary": {}
     }
 
-# ================== ОБРАБОТЧИКИ ==================
+# ========== ОБРАБОТЧИКИ ==========
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
@@ -757,9 +762,10 @@ async def cmd_cancel(message: Message, state: FSMContext):
     style = await get_user_style(user_id)
     await message.answer("Действие отменено.", reply_markup=main_keyboard(style))
 
-# ================== ЗАПУСК ==================
+# ========== ЗАПУСК ==========
 async def main():
     await init_db()
+    print("Бот успешно запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
