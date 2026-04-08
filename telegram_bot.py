@@ -4,31 +4,26 @@ import os
 import math
 import random
 import re
-import sqlite3
 from datetime import datetime
 import calendar
 from typing import Dict, Optional
+from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import aiosqlite
 
-from dotenv import load_dotenv
-import os
-
-# Загружаем переменные из файла .env
 load_dotenv()
-
-# Теперь BOT_TOKEN берем из окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в .env файле")
 
-# ================== КОНФИГУРАЦИЯ ==================
-DB_FILE = "budget_bot.db"               # SQLite файл
-HUMOR_FILE = "humor_phrases.json"       # файл с шутками (необязательный)
+DB_FILE = "budget_bot.db"
+HUMOR_FILE = "humor_phrases.json"
 
 # ================== ЗАГРУЗКА ШУТОК ==================
 def load_humor_phrases() -> Dict:
@@ -38,7 +33,6 @@ def load_humor_phrases() -> Dict:
                 return json.load(f)
         except:
             pass
-    # встроенные шутки по умолчанию (короткие, но рабочие)
     return {
         "greeting": ["Привет!", "Здарова!", "О, привет!"],
         "goodbye": ["Пока!", "До встречи!", "Бывай!"],
@@ -253,7 +247,6 @@ def get_random_humor(key: str, **kwargs) -> str:
         return phrase
 
 def get_message(style: str, key: str, **kwargs) -> str:
-    """Получить сообщение для данного стиля."""
     if style == "humorous" and key in HUMOR_PHRASES:
         return get_random_humor(key, **kwargs)
     msg_dict = MESSAGES.get(key, {})
@@ -279,7 +272,6 @@ def format_money(amount: int, style: str) -> str:
         return f"{amount:,}".replace(",", " ")
 
 def parse_money(text: str) -> Optional[int]:
-    """Преобразует пользовательский ввод в целое число рублей."""
     if not text or not isinstance(text, str):
         return None
     text = text.lower().strip()
@@ -328,7 +320,7 @@ def calculate_daily_limit(remaining: int, days: int) -> int:
         return 0
     return math.ceil(remaining / days)
 
-# ================== БАЗА ДАННЫХ (SQLite) ==================
+# ================== БАЗА ДАННЫХ ==================
 async def init_db():
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute('''
@@ -370,7 +362,7 @@ async def update_user_style(user_id: int, style: str):
         await db.execute('UPDATE users SET speech_style = ? WHERE user_id = ?', (style, user_id))
         await db.commit()
 
-# ================== FSM СОСТОЯНИЯ ==================
+# ================== FSM ==================
 class BudgetSetup(StatesGroup):
     income = State()
     fund = State()
@@ -413,7 +405,7 @@ def style_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=get_message("conversational", "style_humorous"), callback_data="style_humorous")]
     ])
 
-# ================== ХЕЛПЕРЫ ДЛЯ ДАННЫХ ==================
+# ================== ХЕЛПЕР ДЛЯ НОВЫХ ДАННЫХ ==================
 def new_user_data(income: int, fund: int, fixed: int, temporary: int, unexpected: int, estimated: int, daily: int) -> Dict:
     today = datetime.now()
     days_in_month = calendar.monthrange(today.year, today.month)[1]
@@ -465,7 +457,6 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         await state.set_state(BudgetSetup.income)
 
-# ----- НАСТРОЙКА БЮДЖЕТА -----
 async def get_money_input(message: Message, state: FSMContext, next_state, field_name):
     value = parse_money(message.text)
     if value is None:
@@ -530,7 +521,6 @@ async def process_daily_cat(message: Message, state: FSMContext):
         reply_markup=main_keyboard(style)
     )
 
-# ----- ДОБАВЛЕНИЕ РАСХОДА -----
 @dp.message(Command("add"))
 @dp.message(F.text == "📝 Добавить расход")
 async def cmd_add(message: Message, state: FSMContext):
@@ -577,18 +567,14 @@ async def process_description(message: Message, state: FSMContext):
 
     style = await get_user_style(user_id)
 
-    # Проверка лимита категории
     remaining_cat = user_data['expense_categories'][category]['remaining']
     if amount > remaining_cat:
         await message.answer(get_message(style, "category_warning", remaining=format_money(remaining_cat, style)))
-        # Всё равно продолжаем, пользователь подтвердил, просто предупредили
 
-    # Списываем
     user_data['expense_categories'][category]['spent'] += amount
     user_data['expense_categories'][category]['remaining'] -= amount
     user_data['remaining_budget'] -= amount
 
-    # Сохраняем историю
     user_data['expense_history'].append({
         "date": datetime.now().isoformat(),
         "category": category,
@@ -596,7 +582,6 @@ async def process_description(message: Message, state: FSMContext):
         "description": description
     })
 
-    # Пересчёт дневного лимита
     if user_data['days_left'] > 0:
         user_data['daily_limit'] = calculate_daily_limit(user_data['remaining_budget'], user_data['days_left'])
 
@@ -607,7 +592,6 @@ async def process_description(message: Message, state: FSMContext):
         get_message(style, "expense_added", amount=format_money(amount, style), category=cat_name) +
         (f"\n{get_message(style, 'expense_description', description=description)}" if description else "")
     )
-    # Совет
     daily_limit = user_data['daily_limit']
     if amount > daily_limit * 2:
         await message.answer(get_message(style, "advice_critical"))
@@ -622,7 +606,6 @@ async def process_description(message: Message, state: FSMContext):
 
     await state.clear()
 
-# ----- ЕЖЕДНЕВНАЯ ПРОВЕРКА -----
 @dp.message(Command("daily"))
 @dp.message(F.text == "🌅 Ежедневная проверка")
 async def cmd_daily(message: Message, state: FSMContext):
@@ -671,9 +654,8 @@ async def process_daily_choice(message: Message, state: FSMContext):
         await state.clear()
 
     elif choice == '2':
-        # Переход к добавлению расхода
         await state.clear()
-        await cmd_add(message, state)  # вызовем добавление расхода
+        await cmd_add(message, state)
 
     elif choice == '3':
         await message.answer(get_message(style, "skip_check"))
@@ -682,7 +664,6 @@ async def process_daily_choice(message: Message, state: FSMContext):
     else:
         await message.answer("Не понял, выбери 1, 2 или 3.")
 
-# ----- СТАТУС -----
 @dp.message(Command("status"))
 @dp.message(F.text == "📊 Статус")
 async def cmd_status(message: Message):
@@ -722,7 +703,6 @@ async def cmd_status(message: Message):
 
     await message.answer(text)
 
-# ----- ОБЩИЙ ФОНД -----
 @dp.message(Command("fund"))
 @dp.message(F.text == "💰 Общий фонд")
 async def cmd_fund(message: Message):
@@ -735,7 +715,6 @@ async def cmd_fund(message: Message):
     fund = format_money(data['total_fund'], style)
     await message.answer(get_message(style, "total_fund", amount=fund))
 
-# ----- ИСТОРИЯ -----
 @dp.message(Command("history"))
 @dp.message(F.text == "📈 История")
 async def cmd_history(message: Message):
@@ -752,7 +731,6 @@ async def cmd_history(message: Message):
         text += get_message(style, "history_item", month=month, saved=saved, fund=fund) + "\n"
     await message.answer(text)
 
-# ----- СМЕНА СТИЛЯ -----
 @dp.message(Command("style"))
 @dp.message(F.text == "🗣️ Стиль")
 async def cmd_style(message: Message):
@@ -762,7 +740,7 @@ async def cmd_style(message: Message):
 
 @dp.callback_query(F.data.startswith("style_"))
 async def process_style_change(callback: CallbackQuery):
-    new_style = callback.data[6:]  # style_official -> official
+    new_style = callback.data[6:]
     user_id = callback.from_user.id
     await update_user_style(user_id, new_style)
     style_names = {"official": "официальный", "conversational": "разговорный", "humorous": "с юмором"}
@@ -771,7 +749,6 @@ async def process_style_change(callback: CallbackQuery):
     )
     await callback.answer()
 
-# ----- ОТМЕНА -----
 @dp.message(Command("cancel"))
 @dp.message(F.text.lower() == "отмена")
 async def cmd_cancel(message: Message, state: FSMContext):
@@ -782,9 +759,6 @@ async def cmd_cancel(message: Message, state: FSMContext):
 
 # ================== ЗАПУСК ==================
 async def main():
-    if BOT_TOKEN == "ТВОЙ_ТОКЕН":
-        print("ОШИБКА: Вставьте свой токен в переменную BOT_TOKEN")
-        return
     await init_db()
     await dp.start_polling(bot)
 
