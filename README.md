@@ -30,23 +30,16 @@ Telegram-бот для учёта личного бюджета. Поддерж�
 git clone https://github.com/cheeekyou/BudgetManager.git
 cd BudgetManager
 
-text
-
 2. **Установите зависимости**
 pip install -r requirements.txt
 
-text
 (если файла `requirements.txt` нет — установите вручную: `aiogram`, `aiosqlite`, `python-dotenv`)
 
 3. **Создайте файл `.env`** и добавьте токен бота:
 BOT_TOKEN=ваш_токен_от_BotFather
 
-text
-
 4. **Запустите бота**
 python telegram_bot.py
-
-text
 
 ## 🧪 Как получить токен
 
